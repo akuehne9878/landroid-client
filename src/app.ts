@@ -1,5 +1,6 @@
 import * as dotenv from "dotenv"; // Load environment variables
 import { LandroidClient } from "./LandroidClient";
+import { MowerStatus } from "./types";
 
 // Load .env configuration
 dotenv.config();
@@ -17,7 +18,10 @@ dotenv.config();
 
   try {
     const client: LandroidClient = await LandroidClient.getInstance(email, password, clientId);
-    await client.ping();
+    const status : MowerStatus =  await client.getMowerStatus();
+
+    console.log("Battery Level:", status.dat.bt.p);
+    
   } catch (err: any) {
     console.error(err.message);
   }

@@ -84,7 +84,7 @@ type ConfigSchedule = {
     modules: DataModules;
   };
   
-  export type RootObject = {
+  export type MowerStatus = {
     cfg: Config;
     dat: Data;
   };

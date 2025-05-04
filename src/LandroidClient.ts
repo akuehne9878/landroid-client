@@ -1,6 +1,6 @@
 import axios from "axios";
 import { mqtt, iot } from "aws-iot-device-sdk-v2";
-import { RootObject } from './types'; // Import the RootObject type
+import { MowerStatus } from './types'; // Import the RootObject type
 import { UserData } from "./UserData";
 import { Device } from "./Device";
 
@@ -11,11 +11,8 @@ export class LandroidClient {
     private clientId: string;
     private userData: UserData | null = null;
     private deviceList: Device[] | null = null;
-
     private mqttConnection: mqtt.MqttClientConnection = {} as mqtt.MqttClientConnection;
-
     private accessToken: string = ""
-    //private mqttClient: mqtt.MqttClient | null = null;
 
     private constructor(email: string, password: string, clientId: string) {
         this.email = email;
@@ -27,10 +24,6 @@ export class LandroidClient {
     public static async getInstance(email: string, password: string, clientId: string): Promise<LandroidClient> {
         if (!LandroidClient.instance) {
             LandroidClient.instance = new LandroidClient(email, password, clientId);
-            // await LandroidClient.instance.fetchAccessToken();
-            // await LandroidClient.instance.fetchUserData();
-            // await LandroidClient.instance.fetchDeviceList();
-
             await LandroidClient.instance.connectToAwsMqtt();
         }
         return LandroidClient.instance;
@@ -138,9 +131,6 @@ export class LandroidClient {
     }
 
     private async connectToAwsMqtt(): Promise<void> {
-
-        const device: Device = await this.getDevice();
-
         try {
             console.log("Establishing MQTT connection...");
             const mqttClient = new mqtt.MqttClient();
@@ -153,22 +143,6 @@ export class LandroidClient {
             mqttConnection.on("disconnect", () => console.log("Disconnected from MQTT Broker."));
 
             await mqttConnection.connect();
-
-            mqttConnection.subscribe(device.mqtt_topics.command_out, mqtt.QoS.AtLeastOnce, (topic, payload) => {
-                console.log(`Message received on topic "${topic}": ${payload.toString()}`);
-                try {
-                    const json = Buffer.from(payload);
-                    const data: RootObject = JSON.parse(json.toString("utf-8"));
-                    // Parse the JSON string and assert its type as RootObject
-
-                    // Access properties of the RootObject
-                    console.log(data.cfg.id); // Example: Accessing the ID
-                    console.log(data.dat.mac); // Example: Accessing the MAC address
-                    console.log("battery percentage: " + data.dat.bt.p); // Example: Accessing the battery percentage
-                } catch (error) {
-                    console.error("Failed to parse JSON:", error);
-                }
-            })
 
             this.mqttConnection = mqttConnection;
 
@@ -218,19 +192,39 @@ export class LandroidClient {
         return result;
     }
 
- 
+    
 
-    public async ping() {
+    public async getMowerStatus() : Promise<MowerStatus> {
+
         const device: Device = await this.getDevice();
         const message = {
             "id": 1024 + Math.floor(Math.random() * (65535 - 1025)),                     // Randomly generated ID
             "cmd": 0,                       // Command type
             "lg": "de"                   // Language (e.g., "de" for German)
         }
-
+        
+        const promise : Promise<MowerStatus> = new Promise<MowerStatus>((resolve, reject) => {
+            this.mqttConnection.subscribe(device.mqtt_topics.command_out, mqtt.QoS.AtLeastOnce, (topic, payload) => {
+                try {
+                    const json = Buffer.from(payload);
+                    console.log(`Message received on topic "${topic}": ${json.toString("utf-8")}`);
+                    const data: MowerStatus = JSON.parse(json.toString("utf-8"));
+                    this.mqttConnection.unsubscribe(device.mqtt_topics.command_out); // Unsubscribe from the topic after receiving the message
+                    resolve(data); // Resolve the promise with the parsed data
+                } catch (error) {
+                    console.error("Failed to parse JSON:", error);
+                    this.mqttConnection.unsubscribe(device.mqtt_topics.command_out); 
+                    reject(error); // Reject the promise in case of an error
+                }
+            });
+        });
+        
         this.mqttConnection.publish(device.mqtt_topics.command_in, JSON.stringify(message), mqtt.QoS.AtLeastOnce);
         console.log("Ping message sent:", message);
+
+        return promise;
     }
+
 
 
 }
